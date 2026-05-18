@@ -13,12 +13,12 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          # Added 'lld' and 'llvm' to ensure base system dependencies are met
           sudo apt-get install -y build-essential bc libelf-dev bison flex libssl-dev lld llvm
 
       - name: Download Android Clang 17.0.2 Toolchain
         run: |
-          git clone --depth 1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 android-clang
+          # Explicitly targeting the android14-release branch where this compiler lives
+          git clone --depth 1 --branch android14-release --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 android-clang
           cd android-clang
           git sparse-checkout set clang-r487747c
 
@@ -88,10 +88,4 @@ jobs:
           # 7. Gather all compiled .ko files
           echo "[*] Collecting generated .ko files..."
           mkdir -p ../compiled-modules
-          find . -name "*.ko" -exec cp {} ../compiled-modules/ \;
-
-      - name: Upload Compiled Modules
-        uses: actions/upload-artifact@v4
-        with:
-          name: Edge60-Fusion-Custom-Modules
-          path: compiled-modules/
+          find .
