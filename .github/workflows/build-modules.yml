@@ -15,11 +15,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc libelf-dev bison flex libssl-dev
 
-      - name: Download Android Clang Toolchain
+      - name: Download Android Clang 17.0.2 Toolchain
         run: |
           git clone --depth 1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 android-clang
           cd android-clang
-          git sparse-checkout set clang-r416183b
+          git sparse-checkout set clang-r487747c
 
       - name: Clone Motorola Kernel Source
         run: |
@@ -27,8 +27,8 @@ jobs:
 
       - name: Configure and Compile Modules
         run: |
-          # 1. Set up Clang environment
-          export CLANG_DIR="${GITHUB_WORKSPACE}/android-clang/clang-r416183b"
+          # 1. Set up Clang 17 environment (Updated to match the downloaded folder)
+          export CLANG_DIR="${GITHUB_WORKSPACE}/android-clang/clang-r487747c"
           export PATH="${CLANG_DIR}/bin:${PATH}"
           export ARCH=arm64
           export SUBARCH=arm64
