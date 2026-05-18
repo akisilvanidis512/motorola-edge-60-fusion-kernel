@@ -17,7 +17,6 @@ jobs:
 
       - name: Download Android Clang 17.0.2 Toolchain
         run: |
-          # Explicitly targeting the android14-release branch where this compiler lives
           git clone --depth 1 --branch android14-release --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 android-clang
           cd android-clang
           git sparse-checkout set clang-r487747c
@@ -28,19 +27,19 @@ jobs:
 
       - name: Configure and Compile Modules
         run: |
-          # 1. Map absolute paths for Clang 17
           export CLANG_DIR="${GITHUB_WORKSPACE}/android-clang/clang-r487747c"
           
-          # Debug step: Verify the compiler binaries actually exist on the runner
           echo "[*] Verifying Clang binaries..."
           ls -la ${CLANG_DIR}/bin/clang || echo "CLANG MISSING"
           ls -la ${CLANG_DIR}/bin/ld.lld || echo "LLD MISSING"
           
-          # 2. Copy your device base .config into the tree
           cp .config kernel-source/.config
           cd kernel-source
           
-          # 3. Inject missing configs for your specific hardware features
+          # FIX: Create an empty ABI symbol list to bypass the GKI restriction
+          echo "[*] Creating empty ABI symbol list to bypass GKI check..."
+          touch abi_symbollist.raw
+          
           echo "[*] Injecting custom module configurations..."
           
           # PPPoE Modules
@@ -66,7 +65,6 @@ jobs:
           echo "CONFIG_ISO9660_FS=m" >> .config
           echo "CONFIG_UDF_FS=m" >> .config
 
-          # 4. Define aggressive Make arguments to force absolute paths
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 LLVM=1 LLVM_IAS=1 \
           CC=${CLANG_DIR}/bin/clang \
           LD=${CLANG_DIR}/bin/ld.lld \
@@ -76,16 +74,19 @@ jobs:
           OBJDUMP=${CLANG_DIR}/bin/llvm-objdump \
           STRIP=${CLANG_DIR}/bin/llvm-strip"
 
-          # 5. Process config and prepare headers
           echo "[*] Applying config modifications..."
           make $MAKE_ARGS olddefconfig
           make $MAKE_ARGS modules_prepare
           
-          # 6. Compile ONLY the modules
           echo "[*] Compiling target modules..."
           make $MAKE_ARGS modules -j$(nproc)
           
-          # 7. Gather all compiled .ko files
           echo "[*] Collecting generated .ko files..."
           mkdir -p ../compiled-modules
-          find .
+          find . -name "*.ko" -exec cp {} ../compiled-modules/ \;
+
+      - name: Upload Compiled Modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: Edge60-Fusion-Custom-Modules
+          path: compiled-modules/
