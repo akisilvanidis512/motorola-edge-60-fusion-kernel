@@ -13,7 +13,8 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc libelf-dev bison flex libssl-dev
+          # Added 'lld' and 'llvm' to ensure base system dependencies are met
+          sudo apt-get install -y build-essential bc libelf-dev bison flex libssl-dev lld llvm
 
       - name: Download Android Clang 17.0.2 Toolchain
         run: |
@@ -27,18 +28,13 @@ jobs:
 
       - name: Configure and Compile Modules
         run: |
-          # 1. Set up Clang 17 environment (Updated to match the downloaded folder)
+          # 1. Map absolute paths for Clang 17
           export CLANG_DIR="${GITHUB_WORKSPACE}/android-clang/clang-r487747c"
-          export PATH="${CLANG_DIR}/bin:${PATH}"
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CC=clang
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
+          
+          # Debug step: Verify the compiler binaries actually exist on the runner
+          echo "[*] Verifying Clang binaries..."
+          ls -la ${CLANG_DIR}/bin/clang || echo "CLANG MISSING"
+          ls -la ${CLANG_DIR}/bin/ld.lld || echo "LLD MISSING"
           
           # 2. Copy your device base .config into the tree
           cp .config kernel-source/.config
@@ -52,7 +48,7 @@ jobs:
           echo "CONFIG_PPP_ASYNC=m" >> .config
           echo "CONFIG_PPPOE=m" >> .config
           
-          # RTL-SDR & DVB-T/T2/DAB/FM (Crypto ReDi PC 50 / RTL2832U)
+          # RTL-SDR & DVB-T/T2/DAB/FM
           echo "CONFIG_MEDIA_SUPPORT=m" >> .config
           echo "CONFIG_MEDIA_DIGITAL_TV_SUPPORT=y" >> .config
           echo "CONFIG_MEDIA_RADIO_SUPPORT=y" >> .config
@@ -64,22 +60,32 @@ jobs:
           echo "CONFIG_DVB_RTL2832=m" >> .config
           echo "CONFIG_DVB_RTL2832_SDR=m" >> .config
           
-          # Blu-ray / DVD / CDFS Support (/dev/sr0)
+          # Blu-ray / DVD / CDFS Support
           echo "CONFIG_CDROM=m" >> .config
           echo "CONFIG_BLK_DEV_SR=m" >> .config
           echo "CONFIG_ISO9660_FS=m" >> .config
           echo "CONFIG_UDF_FS=m" >> .config
 
-          # 4. Process config and prepare headers
+          # 4. Define aggressive Make arguments to force absolute paths
+          MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          CC=${CLANG_DIR}/bin/clang \
+          LD=${CLANG_DIR}/bin/ld.lld \
+          AR=${CLANG_DIR}/bin/llvm-ar \
+          NM=${CLANG_DIR}/bin/llvm-nm \
+          OBJCOPY=${CLANG_DIR}/bin/llvm-objcopy \
+          OBJDUMP=${CLANG_DIR}/bin/llvm-objdump \
+          STRIP=${CLANG_DIR}/bin/llvm-strip"
+
+          # 5. Process config and prepare headers
           echo "[*] Applying config modifications..."
-          make LLVM=1 LLVM_IAS=1 olddefconfig
-          make LLVM=1 LLVM_IAS=1 modules_prepare
+          make $MAKE_ARGS olddefconfig
+          make $MAKE_ARGS modules_prepare
           
-          # 5. Compile ONLY the modules (skips core kernel Image compilation)
+          # 6. Compile ONLY the modules
           echo "[*] Compiling target modules..."
-          make LLVM=1 LLVM_IAS=1 modules -j$(nproc)
+          make $MAKE_ARGS modules -j$(nproc)
           
-          # 6. Gather all compiled .ko files from the source tree
+          # 7. Gather all compiled .ko files
           echo "[*] Collecting generated .ko files..."
           mkdir -p ../compiled-modules
           find . -name "*.ko" -exec cp {} ../compiled-modules/ \;
