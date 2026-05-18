@@ -1,0 +1,64 @@
+name: Build Edge 60 Fusion Modules
+
+on:
+  workflow_dispatch: # Allows you to manually trigger the build
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc libelf-dev bison flex libssl-dev
+
+      - name: Download Android Clang Toolchain
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 android-clang
+          cd android-clang
+          git sparse-checkout set clang-r416183b
+
+      - name: Clone Motorola Kernel Source
+        run: |
+          # Clones only the specific tag for the Edge 60 Fusion to save time
+          git clone --depth 1 --branch MMI-W1VCS36H.14-20-19-3 https://github.com/MotorolaMobilityLLC/kernel-mtk.git kernel-source
+
+      - name: Prepare Headers & Compile Modules
+        run: |
+          # Set up Clang environment
+          export CLANG_DIR="${GITHUB_WORKSPACE}/android-clang/clang-r416183b"
+          export PATH="${CLANG_DIR}/bin:${PATH}"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CC=clang
+          export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+          
+          # Move your uploaded device .config into the kernel tree
+          cp .config kernel-source/.config
+          
+          cd kernel-source
+          
+          echo "[*] Preparing kernel headers..."
+          make LLVM=1 LLVM_IAS=1 modules_prepare
+          
+          echo "[*] Compiling modules..."
+          # Change this path if you are building USBIP or something else
+          make LLVM=1 LLVM_IAS=1 M=drivers/net/ppp modules 
+          
+          # Find and collect the compiled .ko files
+          mkdir -p ../compiled-modules
+          find drivers/net/ppp -name "*.ko" -exec cp {} ../compiled-modules/ \;
+
+      - name: Upload Compiled Modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: Edge60-Fusion-Modules
+          path: compiled-modules/*.ko
