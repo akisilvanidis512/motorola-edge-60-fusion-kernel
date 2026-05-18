@@ -1,7 +1,7 @@
-name: Build Edge 60 Fusion Modules
+name: Build Edge 60 Fusion Custom Modules
 
 on:
-  workflow_dispatch: # Allows you to manually trigger the build
+  workflow_dispatch:
 
 jobs:
   build:
@@ -23,12 +23,11 @@ jobs:
 
       - name: Clone Motorola Kernel Source
         run: |
-          # Clones only the specific tag for the Edge 60 Fusion to save time
           git clone --depth 1 --branch MMI-W1VCS36H.14-20-19-3 https://github.com/MotorolaMobilityLLC/kernel-mtk.git kernel-source
 
-      - name: Prepare Headers & Compile Modules
+      - name: Configure and Compile Modules
         run: |
-          # Set up Clang environment
+          # 1. Set up Clang environment
           export CLANG_DIR="${GITHUB_WORKSPACE}/android-clang/clang-r416183b"
           export PATH="${CLANG_DIR}/bin:${PATH}"
           export ARCH=arm64
@@ -41,24 +40,52 @@ jobs:
           export OBJDUMP=llvm-objdump
           export STRIP=llvm-strip
           
-          # Move your uploaded device .config into the kernel tree
+          # 2. Copy your device base .config into the tree
           cp .config kernel-source/.config
-          
           cd kernel-source
           
-          echo "[*] Preparing kernel headers..."
+          # 3. Inject missing configs for your specific hardware features
+          echo "[*] Injecting custom module configurations..."
+          
+          # PPPoE Modules
+          echo "CONFIG_PPP=m" >> .config
+          echo "CONFIG_PPP_ASYNC=m" >> .config
+          echo "CONFIG_PPPOE=m" >> .config
+          
+          # RTL-SDR & DVB-T/T2/DAB/FM (Crypto ReDi PC 50 / RTL2832U)
+          echo "CONFIG_MEDIA_SUPPORT=m" >> .config
+          echo "CONFIG_MEDIA_DIGITAL_TV_SUPPORT=y" >> .config
+          echo "CONFIG_MEDIA_RADIO_SUPPORT=y" >> .config
+          echo "CONFIG_MEDIA_SDR_SUPPORT=y" >> .config
+          echo "CONFIG_MEDIA_USB_SUPPORT=y" >> .config
+          echo "CONFIG_DVB_USB_V2=m" >> .config
+          echo "CONFIG_DVB_USB_RTL28XXU=m" >> .config
+          echo "CONFIG_DVB_RTL2830=m" >> .config
+          echo "CONFIG_DVB_RTL2832=m" >> .config
+          echo "CONFIG_DVB_RTL2832_SDR=m" >> .config
+          
+          # Blu-ray / DVD / CDFS Support (/dev/sr0)
+          echo "CONFIG_CDROM=m" >> .config
+          echo "CONFIG_BLK_DEV_SR=m" >> .config
+          echo "CONFIG_ISO9660_FS=m" >> .config
+          echo "CONFIG_UDF_FS=m" >> .config
+
+          # 4. Process config and prepare headers
+          echo "[*] Applying config modifications..."
+          make LLVM=1 LLVM_IAS=1 olddefconfig
           make LLVM=1 LLVM_IAS=1 modules_prepare
           
-          echo "[*] Compiling modules..."
-          # Change this path if you are building USBIP or something else
-          make LLVM=1 LLVM_IAS=1 M=drivers/net/ppp modules 
+          # 5. Compile ONLY the modules (skips core kernel Image compilation)
+          echo "[*] Compiling target modules..."
+          make LLVM=1 LLVM_IAS=1 modules -j$(nproc)
           
-          # Find and collect the compiled .ko files
+          # 6. Gather all compiled .ko files from the source tree
+          echo "[*] Collecting generated .ko files..."
           mkdir -p ../compiled-modules
-          find drivers/net/ppp -name "*.ko" -exec cp {} ../compiled-modules/ \;
+          find . -name "*.ko" -exec cp {} ../compiled-modules/ \;
 
       - name: Upload Compiled Modules
         uses: actions/upload-artifact@v4
         with:
-          name: Edge60-Fusion-Modules
-          path: compiled-modules/*.ko
+          name: Edge60-Fusion-Custom-Modules
+          path: compiled-modules/
