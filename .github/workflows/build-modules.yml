@@ -36,7 +36,6 @@ jobs:
           cp .config kernel-source/.config
           cd kernel-source
           
-          # FIX: Create an empty ABI symbol list to bypass the GKI restriction
           echo "[*] Creating empty ABI symbol list to bypass GKI check..."
           touch abi_symbollist.raw
           
@@ -78,12 +77,21 @@ jobs:
           make $MAKE_ARGS olddefconfig
           make $MAKE_ARGS modules_prepare
           
-          echo "[*] Compiling target modules..."
-          make $MAKE_ARGS modules -j$(nproc)
+          echo "[*] Compiling ONLY the target modules (Skipping Core Kernel)..."
+          
+          # We use M= specifically to bypass the core vmlinux build
+          make $MAKE_ARGS M=drivers/net/ppp modules -j$(nproc)
+          make $MAKE_ARGS M=drivers/media modules -j$(nproc)
+          make $MAKE_ARGS M=drivers/cdrom modules -j$(nproc)
+          make $MAKE_ARGS M=drivers/scsi modules -j$(nproc)
+          make $MAKE_ARGS M=fs/isofs modules -j$(nproc)
+          make $MAKE_ARGS M=fs/udf modules -j$(nproc)
           
           echo "[*] Collecting generated .ko files..."
           mkdir -p ../compiled-modules
-          find . -name "*.ko" -exec cp {} ../compiled-modules/ \;
+          
+          # Find and move only the freshly compiled modules from those specific folders
+          find drivers/net/ppp drivers/media drivers/cdrom drivers/scsi fs/isofs fs/udf -name "*.ko" -exec cp {} ../compiled-modules/ \;
 
       - name: Upload Compiled Modules
         uses: actions/upload-artifact@v4
