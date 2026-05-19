@@ -19,7 +19,6 @@ jobs:
       with:
         msystem: MINGW64
         update: true
-        # Added 'git' to the package list here!
         install: >-
           git
           mingw-w64-x86_64-toolchain
@@ -27,8 +26,9 @@ jobs:
           mingw-w64-x86_64-libusb
           mingw-w64-x86_64-SDL2
 
-    - name: Clone Windows-Compatible Fork
-      run: git clone https://github.com/Mr-Precise/rtl_fm_sdlplayer.git
+    - name: Clone Windows-Compatible Fork with Submodules
+      # The --recursive flag is the crucial fix here!
+      run: git clone --recursive https://github.com/Mr-Precise/rtl_fm_sdlplayer.git
 
     - name: Build the C Executable
       run: |
