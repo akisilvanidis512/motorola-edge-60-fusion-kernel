@@ -31,16 +31,16 @@ jobs:
           cp .config kernel-source/.config
           cd kernel-source
           
-          # --- ABI & SECURITY BYPASSES ---
-          # 1. Disable Version Checking to stop 'Invalid argument' (ABI Mismatch)
+          # 1. Δημιουργία κενού ABI Whitelist (Το κρίσιμο fix)
+          touch abi_symbollist.raw
+          
+          # 2. Απενεργοποίηση ελέγχων ασφαλείας
           echo "# CONFIG_MODVERSIONS is not set" >> .config
-          # 2. Disable Control Flow Integrity to stop Kernel Panics
           echo "# CONFIG_CFI_CLANG is not set" >> .config
           echo "CONFIG_CFI_PERMISSIVE=y" >> .config
-          # 3. Disable signing requirements
           echo "CONFIG_MODULE_SIG=n" >> .config
           
-          # --- FEATURE CONFIGURATIONS ---
+          # 3. Ρυθμίσεις Drivers
           echo "CONFIG_PPP_ASYNC=m" >> .config
           echo "CONFIG_PPPOE=m" >> .config
           echo "CONFIG_DVB_CORE=m" >> .config
