@@ -19,8 +19,11 @@ jobs:
       with:
         msystem: MINGW64
         update: true
+        # Added make and diffutils to prevent missing command errors
         install: >-
           git
+          make
+          diffutils
           mingw-w64-x86_64-toolchain
           mingw-w64-x86_64-cmake
           mingw-w64-x86_64-libusb
@@ -32,10 +35,10 @@ jobs:
         tar -xzf libev-4.33.tar.gz
         cd libev-4.33
         
-        # FIX: Force older C standard to avoid GCC 16.1 (C23) keyword errors
         export CFLAGS="-std=gnu99 -Wno-implicit-function-declaration -Wno-incompatible-pointer-types"
         
-        ./configure --prefix=/mingw64 --host=x86_64-w64-mingw32
+        # Added --disable-dependency-tracking to fix the config.status crash
+        ./configure --prefix=/mingw64 --host=x86_64-w64-mingw32 --disable-dependency-tracking
         make
         make install
 
@@ -48,7 +51,6 @@ jobs:
         mkdir build
         cd build
         
-        # FIX: Force CMake to use C99 standard so old rtl-sdr code compiles cleanly
         cmake -G "MinGW Makefiles" -DCMAKE_C_STANDARD=99 -DCMAKE_C_FLAGS="-std=gnu99 -Wno-incompatible-pointer-types" ..
         cmake --build .
 
