@@ -49,8 +49,8 @@ jobs:
         mkdir build
         cd build
         
-        # FIX: Added -DCMAKE_POLICY_VERSION_MINIMUM=3.5 to bypass the deprecation error
-        cmake -G "MinGW Makefiles" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_STANDARD=99 -DCMAKE_C_FLAGS="-std=gnu99 -Wno-incompatible-pointer-types" ..
+        # FIX: Point CMake directly to the MSYS2 winpthreads library
+        cmake -G "MinGW Makefiles" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_STANDARD=99 -DCMAKE_C_FLAGS="-std=gnu99 -Wno-incompatible-pointer-types" -DTHREADS_PTHREADS_WIN32_LIBRARY=/mingw64/lib/libwinpthread.dll.a ..
         cmake --build .
 
     - name: Package Base Binaries and DLLs
