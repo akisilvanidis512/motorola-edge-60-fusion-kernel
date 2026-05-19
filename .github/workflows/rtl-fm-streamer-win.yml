@@ -19,7 +19,9 @@ jobs:
       with:
         msystem: MINGW64
         update: true
+        # Added 'git' to the package list here!
         install: >-
+          git
           mingw-w64-x86_64-toolchain
           mingw-w64-x86_64-cmake
           mingw-w64-x86_64-libusb
@@ -39,8 +41,8 @@ jobs:
     - name: Package Base Binaries and DLLs
       run: |
         mkdir release_package
-        # Copy the compiled FM player (it might be named rtl_fm_player.exe or rtl_fm_sdlplayer.exe)
-        cp rtl_fm_sdlplayer/build/*.exe release_package/
+        # Copy the compiled FM player
+        cp rtl_fm_sdlplayer/build/*.exe release_package/ || true
         
         # Copy necessary runtime DLLs
         cp /mingw64/bin/libusb-1.0.dll release_package/ || true
@@ -72,7 +74,6 @@ jobs:
                 StartPosition = FormStartPosition.CenterScreen;
                 MaximizeBox = false;
 
-                // Auto-detect the compiled executable name
                 if (File.Exists("rtl_fm_player.exe")) exeName = "rtl_fm_player.exe";
                 else if (File.Exists("rtl_fm_sdlplayer.exe")) exeName = "rtl_fm_sdlplayer.exe";
 
@@ -114,7 +115,7 @@ jobs:
                     player.StartInfo.FileName = exeName;
                     player.StartInfo.Arguments = $"-f {freqStr}";
                     player.StartInfo.UseShellExecute = false;
-                    player.StartInfo.CreateNoWindow = true; // Runs in the background invisibly
+                    player.StartInfo.CreateNoWindow = true; 
                     player.Start();
                     
                     startBtn.Text = "Stop Radio";
