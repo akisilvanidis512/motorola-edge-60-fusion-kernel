@@ -1,21 +1,20 @@
-name: Build Streamer and GUI Wrapper
+name: Build Windows FM Player and GUI
 
 on:
   push:
-    branches: [ "master", "main" ]
-  pull_request:
     branches: [ "master", "main" ]
   workflow_dispatch:
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    
+    defaults:
+      run:
+        shell: msys2 {0}
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: Setup MSYS2 and Install Dependencies
+    - name: Setup MSYS2 and Install Windows Dependencies
       uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW64
@@ -24,16 +23,31 @@ jobs:
           mingw-w64-x86_64-toolchain
           mingw-w64-x86_64-cmake
           mingw-w64-x86_64-libusb
-          mingw-w64-x86_64-rtl-sdr
-          mingw-w64-x86_64-libev
+          mingw-w64-x86_64-SDL2
 
-    - name: Build rtl_fm_streamer (Base CLI)
-      shell: msys2 {0}
+    - name: Clone Windows-Compatible Fork
+      run: git clone https://github.com/Mr-Precise/rtl_fm_sdlplayer.git
+
+    - name: Build the C Executable
       run: |
+        cd rtl_fm_sdlplayer
         mkdir build
         cd build
         cmake -G "MinGW Makefiles" ..
         cmake --build .
+
+    - name: Package Base Binaries and DLLs
+      run: |
+        mkdir release_package
+        # Copy the compiled FM player (it might be named rtl_fm_player.exe or rtl_fm_sdlplayer.exe)
+        cp rtl_fm_sdlplayer/build/*.exe release_package/
+        
+        # Copy necessary runtime DLLs
+        cp /mingw64/bin/libusb-1.0.dll release_package/ || true
+        cp /mingw64/bin/SDL2.dll release_package/ || true
+        cp /mingw64/bin/libwinpthread-1.dll release_package/ || true
+        cp /mingw64/bin/libgcc_s_seh-1.dll release_package/ || true
+        cp /mingw64/bin/libstdc++-6.dll release_package/ || true
 
     - name: Create and Compile C# GUI Wrapper
       shell: pwsh
@@ -43,64 +57,69 @@ jobs:
         using System.Diagnostics;
         using System.Windows.Forms;
         using System.Drawing;
+        using System.IO;
 
         class App : Form {
             TextBox freqInput;
-            ComboBox modeSelect;
             Button startBtn;
-            Process streamer;
+            Process player;
+            string exeName = "";
 
             public App() {
-                Text = "RTL FM Streamer";
-                Size = new Size(320, 200);
+                Text = "RTL FM Radio GUI";
+                Size = new Size(320, 160);
                 FormBorderStyle = FormBorderStyle.FixedDialog;
                 StartPosition = FormStartPosition.CenterScreen;
                 MaximizeBox = false;
 
+                // Auto-detect the compiled executable name
+                if (File.Exists("rtl_fm_player.exe")) exeName = "rtl_fm_player.exe";
+                else if (File.Exists("rtl_fm_sdlplayer.exe")) exeName = "rtl_fm_sdlplayer.exe";
+
                 Label l1 = new Label() { Text = "Frequency (MHz):", Top = 20, Left = 20, Width = 100 };
                 freqInput = new TextBox() { Text = "93.2", Top = 20, Left = 120, Width = 140 };
 
-                Label l2 = new Label() { Text = "Mode:", Top = 60, Left = 20, Width = 100 };
-                modeSelect = new ComboBox() { Top = 60, Left = 120, Width = 140, DropDownStyle = ComboBoxStyle.DropDownList };
-                modeSelect.Items.AddRange(new string[] { "Mono (0)", "Stereo (1)" });
-                modeSelect.SelectedIndex = 1; // Default to Stereo
-
-                startBtn = new Button() { Text = "Launch Streamer", Top = 100, Left = 20, Width = 240, Height = 35 };
+                startBtn = new Button() { Text = "Play Radio", Top = 60, Left = 20, Width = 240, Height = 35 };
                 startBtn.Click += Start_Click;
 
                 Controls.Add(l1); Controls.Add(freqInput);
-                Controls.Add(l2); Controls.Add(modeSelect);
                 Controls.Add(startBtn);
                 
-                FormClosing += (s,e) => { if(streamer != null && !streamer.HasExited) streamer.Kill(); };
+                FormClosing += (s,e) => { StopPlayer(); };
+            }
+
+            void StopPlayer() {
+                if(player != null && !player.HasExited) {
+                    player.Kill();
+                }
             }
 
             void Start_Click(object sender, EventArgs e) {
-                if(streamer != null && !streamer.HasExited) {
-                    streamer.Kill();
-                    startBtn.Text = "Launch Streamer";
+                if (exeName == "") {
+                    MessageBox.Show("Could not find the underlying RTL executable.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                if(player != null && !player.HasExited) {
+                    StopPlayer();
+                    startBtn.Text = "Play Radio";
                     return;
                 }
                 
                 try {
-                    streamer = new Process();
-                    streamer.StartInfo.FileName = "rtl_fm_streamer.exe";
-                    streamer.StartInfo.Arguments = "-P 2346"; // Default Port
-                    streamer.StartInfo.UseShellExecute = true;
-                    streamer.Start();
-                    
-                    // Format frequency for URL (e.g., 93.2 -> 93200000)
                     string freqStr = freqInput.Text.Replace(".", "").Replace(",", "");
                     if(freqStr.Length < 8) freqStr = freqStr.PadRight(8, '0');
                     
-                    // 0 for Mono, 1 for Stereo
-                    string mode = modeSelect.SelectedIndex == 0 ? "0" : "1";
-                    string url = $"http://localhost:2346/{freqStr}/{mode}";
+                    player = new Process();
+                    player.StartInfo.FileName = exeName;
+                    player.StartInfo.Arguments = $"-f {freqStr}";
+                    player.StartInfo.UseShellExecute = false;
+                    player.StartInfo.CreateNoWindow = true; // Runs in the background invisibly
+                    player.Start();
                     
-                    MessageBox.Show($"Streamer is running!\n\n1. Open VLC Media Player\n2. Press Ctrl+N (Open Network Stream)\n3. Enter this URL:\n\n{url}", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    startBtn.Text = "Stop Streamer";
+                    startBtn.Text = "Stop Radio";
                 } catch (Exception ex) {
-                    MessageBox.Show("Error starting rtl_fm_streamer.exe.\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("Error starting playback.\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
 
@@ -111,27 +130,11 @@ jobs:
         }
         "@
         Set-Content -Path GuiWrapper.cs -Value $guiCode
-        # Compile using the built-in Windows C# compiler
-        & "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /target:winexe /out:build\RTL_Streamer_GUI.exe GuiWrapper.cs
+        # Compile the C# GUI directly into the release folder
+        & "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /target:winexe /out:release_package\RTL_Radio_GUI.exe GuiWrapper.cs
 
-    - name: Package Release Files
-      shell: msys2 {0}
-      run: |
-        mkdir release_package
-        
-        # Copy both executables
-        cp build/rtl_fm_streamer.exe release_package/
-        cp build/RTL_Streamer_GUI.exe release_package/
-        
-        # Copy MSYS2 runtime dependencies
-        cp /mingw64/bin/librtlsdr.dll release_package/ || true
-        cp /mingw64/bin/libusb-1.0.dll release_package/ || true
-        cp /mingw64/bin/libwinpthread-1.dll release_package/ || true
-        cp /mingw64/bin/libgcc_s_seh-1.dll release_package/ || true
-        cp /mingw64/bin/libstdc++-6.dll release_package/ || true
-
-    - name: Upload Artifact
+    - name: Upload Finished Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rtl_fm_streamer-GUI-Windows-x64
+        name: rtl_fm_radio-GUI-Windows-x64
         path: release_package/
