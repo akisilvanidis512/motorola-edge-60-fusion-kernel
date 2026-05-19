@@ -1,4 +1,4 @@
-name: Build Windows FM Player and GUI
+name: Build Original Streamer and GUI
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
         shell: msys2 {0}
 
     steps:
-    - name: Setup MSYS2 and Install Windows Dependencies
+    - name: Setup MSYS2 and Install Base Dependencies
       uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW64
@@ -24,29 +24,43 @@ jobs:
           mingw-w64-x86_64-toolchain
           mingw-w64-x86_64-cmake
           mingw-w64-x86_64-libusb
-          mingw-w64-x86_64-SDL2
+          mingw-w64-x86_64-rtl-sdr
 
-    - name: Clone Windows-Compatible Fork with Submodules
-      # The --recursive flag is the crucial fix here!
-      run: git clone --recursive https://github.com/Mr-Precise/rtl_fm_sdlplayer.git
-
-    - name: Build the C Executable
+    - name: Build and Install libev from Source
       run: |
-        cd rtl_fm_sdlplayer
+        curl -O http://dist.schmorp.de/libev/libev-4.33.tar.gz
+        tar -xzf libev-4.33.tar.gz
+        cd libev-4.33
+        
+        # FIX: Force older C standard to avoid GCC 16.1 (C23) keyword errors
+        export CFLAGS="-std=gnu99 -Wno-implicit-function-declaration -Wno-incompatible-pointer-types"
+        
+        ./configure --prefix=/mingw64 --host=x86_64-w64-mingw32
+        make
+        make install
+
+    - name: Clone Original AlbrechtL Repository
+      run: git clone https://github.com/AlbrechtL/rtl_fm_streamer.git
+
+    - name: Build rtl_fm_streamer
+      run: |
+        cd rtl_fm_streamer
         mkdir build
         cd build
-        cmake -G "MinGW Makefiles" ..
+        
+        # FIX: Force CMake to use C99 standard so old rtl-sdr code compiles cleanly
+        cmake -G "MinGW Makefiles" -DCMAKE_C_STANDARD=99 -DCMAKE_C_FLAGS="-std=gnu99 -Wno-incompatible-pointer-types" ..
         cmake --build .
 
     - name: Package Base Binaries and DLLs
       run: |
         mkdir release_package
-        # Copy the compiled FM player
-        cp rtl_fm_sdlplayer/build/*.exe release_package/ || true
+        # Copy the newly compiled streamer
+        cp rtl_fm_streamer/build/rtl_fm_streamer.exe release_package/ || true
         
         # Copy necessary runtime DLLs
+        cp /mingw64/bin/librtlsdr.dll release_package/ || true
         cp /mingw64/bin/libusb-1.0.dll release_package/ || true
-        cp /mingw64/bin/SDL2.dll release_package/ || true
         cp /mingw64/bin/libwinpthread-1.dll release_package/ || true
         cp /mingw64/bin/libgcc_s_seh-1.dll release_package/ || true
         cp /mingw64/bin/libstdc++-6.dll release_package/ || true
@@ -63,47 +77,50 @@ jobs:
 
         class App : Form {
             TextBox freqInput;
+            ComboBox modeSelect;
             Button startBtn;
-            Process player;
-            string exeName = "";
+            Process streamer;
 
             public App() {
-                Text = "RTL FM Radio GUI";
-                Size = new Size(320, 160);
+                Text = "RTL Network Streamer GUI";
+                Size = new Size(320, 220);
                 FormBorderStyle = FormBorderStyle.FixedDialog;
                 StartPosition = FormStartPosition.CenterScreen;
                 MaximizeBox = false;
 
-                if (File.Exists("rtl_fm_player.exe")) exeName = "rtl_fm_player.exe";
-                else if (File.Exists("rtl_fm_sdlplayer.exe")) exeName = "rtl_fm_sdlplayer.exe";
-
                 Label l1 = new Label() { Text = "Frequency (MHz):", Top = 20, Left = 20, Width = 100 };
                 freqInput = new TextBox() { Text = "93.2", Top = 20, Left = 120, Width = 140 };
 
-                startBtn = new Button() { Text = "Play Radio", Top = 60, Left = 20, Width = 240, Height = 35 };
+                Label l2 = new Label() { Text = "Mode:", Top = 60, Left = 20, Width = 100 };
+                modeSelect = new ComboBox() { Top = 60, Left = 120, Width = 140, DropDownStyle = ComboBoxStyle.DropDownList };
+                modeSelect.Items.AddRange(new string[] { "Mono (0)", "Stereo (1)" });
+                modeSelect.SelectedIndex = 1; // Default to Stereo
+
+                startBtn = new Button() { Text = "Launch Streamer", Top = 110, Left = 20, Width = 240, Height = 40 };
                 startBtn.Click += Start_Click;
 
                 Controls.Add(l1); Controls.Add(freqInput);
+                Controls.Add(l2); Controls.Add(modeSelect);
                 Controls.Add(startBtn);
                 
-                FormClosing += (s,e) => { StopPlayer(); };
+                FormClosing += (s,e) => { StopStreamer(); };
             }
 
-            void StopPlayer() {
-                if(player != null && !player.HasExited) {
-                    player.Kill();
+            void StopStreamer() {
+                if(streamer != null && !streamer.HasExited) {
+                    streamer.Kill();
                 }
             }
 
             void Start_Click(object sender, EventArgs e) {
-                if (exeName == "") {
-                    MessageBox.Show("Could not find the underlying RTL executable.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!File.Exists("rtl_fm_streamer.exe")) {
+                    MessageBox.Show("Could not find rtl_fm_streamer.exe in the same folder.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
-                if(player != null && !player.HasExited) {
-                    StopPlayer();
-                    startBtn.Text = "Play Radio";
+                if(streamer != null && !streamer.HasExited) {
+                    StopStreamer();
+                    startBtn.Text = "Launch Streamer";
                     return;
                 }
                 
@@ -111,16 +128,21 @@ jobs:
                     string freqStr = freqInput.Text.Replace(".", "").Replace(",", "");
                     if(freqStr.Length < 8) freqStr = freqStr.PadRight(8, '0');
                     
-                    player = new Process();
-                    player.StartInfo.FileName = exeName;
-                    player.StartInfo.Arguments = $"-f {freqStr}";
-                    player.StartInfo.UseShellExecute = false;
-                    player.StartInfo.CreateNoWindow = true; 
-                    player.Start();
+                    string mode = modeSelect.SelectedIndex == 0 ? "0" : "1";
+                    string url = $"http://localhost:2346/{freqStr}/{mode}";
                     
-                    startBtn.Text = "Stop Radio";
+                    streamer = new Process();
+                    streamer.StartInfo.FileName = "rtl_fm_streamer.exe";
+                    streamer.StartInfo.Arguments = "-P 2346"; 
+                    streamer.StartInfo.UseShellExecute = true;
+                    streamer.StartInfo.WindowStyle = ProcessWindowStyle.Minimized;
+                    streamer.Start();
+                    
+                    startBtn.Text = "Stop Streamer";
+                    MessageBox.Show($"The streamer is running in the background!\n\n1. Open VLC Media Player\n2. Press Ctrl+N (Open Network Stream)\n3. Paste this exact URL:\n\n{url}\n\n4. Click Play", "Streamer Active", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    
                 } catch (Exception ex) {
-                    MessageBox.Show("Error starting playback.\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("Error starting streamer.\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
 
@@ -132,10 +154,10 @@ jobs:
         "@
         Set-Content -Path GuiWrapper.cs -Value $guiCode
         # Compile the C# GUI directly into the release folder
-        & "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /target:winexe /out:release_package\RTL_Radio_GUI.exe GuiWrapper.cs
+        & "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /target:winexe /out:release_package\RTL_Network_Stream_GUI.exe GuiWrapper.cs
 
     - name: Upload Finished Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rtl_fm_radio-GUI-Windows-x64
+        name: rtl_fm_streamer-GUI-Windows-x64
         path: release_package/
