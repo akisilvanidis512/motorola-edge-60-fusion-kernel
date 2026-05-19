@@ -33,19 +33,18 @@ jobs:
           
           echo "[*] Injecting configuration bypasses..."
           
-          # 1. Bypass GKI ABI & Symbol Trimming
+          # 1. Επιθετική απενεργοποίηση του TRIM_UNUSED_KSYMS & ABI Whitelist
           touch abi_symbollist.raw
-          echo "# CONFIG_TRIM_UNUSED_KSYMS is not set" >> .config
+          sed -i 's/CONFIG_TRIM_UNUSED_KSYMS=y/# CONFIG_TRIM_UNUSED_KSYMS is not set/g' .config
+          sed -i 's/CONFIG_UNUSED_KSYMS_WHITELIST="abi_symbollist.raw"/CONFIG_UNUSED_KSYMS_WHITELIST=""/g' .config
           
-          # 2. Disable Version Checking (Fixes 'Invalid argument')
+          # 2. Απενεργοποίηση Security Checks (CFI & Signatures) για να μην έχεις Kernel Panic
           echo "# CONFIG_MODVERSIONS is not set" >> .config
-          
-          # 3. Disable Control Flow Integrity (Fixes Kernel Panic / Reboot)
           echo "# CONFIG_CFI_CLANG is not set" >> .config
           echo "CONFIG_CFI_PERMISSIVE=y" >> .config
           echo "CONFIG_MODULE_SIG=n" >> .config
           
-          # 4. Enable Modules
+          # 3. Ενεργοποίηση των Modules που ζήτησες
           echo "CONFIG_PPP_ASYNC=m" >> .config
           echo "CONFIG_PPPOE=m" >> .config
           echo "CONFIG_MEDIA_SUPPORT=m" >> .config
@@ -75,7 +74,7 @@ jobs:
           make $MAKE_ARGS modules_prepare
           
           echo "[*] Compiling ONLY the target modules..."
-          # Στοχευμένο build μόνο στους φακέλους που χρειαζόμαστε
+          # Στοχευμένο build μόνο στους φακέλους που μας ενδιαφέρουν
           make $MAKE_ARGS M=drivers/net/ppp modules -j$(nproc)
           make $MAKE_ARGS M=drivers/media modules -j$(nproc)
           make $MAKE_ARGS M=drivers/cdrom modules -j$(nproc)
