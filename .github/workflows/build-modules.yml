@@ -38,13 +38,13 @@ jobs:
           sed -i 's/CONFIG_TRIM_UNUSED_KSYMS=y/# CONFIG_TRIM_UNUSED_KSYMS is not set/g' .config
           sed -i 's/CONFIG_UNUSED_KSYMS_WHITELIST="abi_symbollist.raw"/CONFIG_UNUSED_KSYMS_WHITELIST=""/g' .config
           
-          # 2. Απενεργοποίηση Security Checks (CFI & Signatures) για να μην έχεις Kernel Panic
+          # 2. Απενεργοποίηση Security Checks (CFI & Signatures)
           echo "# CONFIG_MODVERSIONS is not set" >> .config
           echo "# CONFIG_CFI_CLANG is not set" >> .config
           echo "CONFIG_CFI_PERMISSIVE=y" >> .config
           echo "CONFIG_MODULE_SIG=n" >> .config
           
-          # 3. Ενεργοποίηση των Modules που ζήτησες
+          # 3. Ενεργοποίηση των Modules (PPP, DVB, CDROM)
           echo "CONFIG_PPP_ASYNC=m" >> .config
           echo "CONFIG_PPPOE=m" >> .config
           echo "CONFIG_MEDIA_SUPPORT=m" >> .config
@@ -59,6 +59,12 @@ jobs:
           echo "CONFIG_BLK_DEV_SR=m" >> .config
           echo "CONFIG_ISO9660_FS=m" >> .config
           echo "CONFIG_UDF_FS=m" >> .config
+
+          # 4. Ενεργοποίηση USB Audio Gadgets
+          echo "CONFIG_USB_GADGET=y" >> .config
+          echo "CONFIG_USB_AUDIO=m" >> .config
+          echo "CONFIG_USB_F_UAC1=m" >> .config
+          echo "CONFIG_USB_F_UAC2=m" >> .config
 
           MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 LLVM=1 LLVM_IAS=1 \
           CC=${CLANG_DIR}/bin/clang \
@@ -82,9 +88,13 @@ jobs:
           make $MAKE_ARGS M=fs/isofs modules -j$(nproc)
           make $MAKE_ARGS M=fs/udf modules -j$(nproc)
           
+          # USB Gadget Build
+          make $MAKE_ARGS M=drivers/usb/gadget/legacy modules -j$(nproc)
+          make $MAKE_ARGS M=drivers/usb/gadget/function modules -j$(nproc)
+          
           echo "[*] Collecting generated .ko files..."
           mkdir -p ../compiled-modules
-          find drivers/net/ppp drivers/media drivers/cdrom drivers/scsi fs/isofs fs/udf -name "*.ko" -exec cp {} ../compiled-modules/ \;
+          find drivers/net/ppp drivers/media drivers/cdrom drivers/scsi fs/isofs fs/udf drivers/usb/gadget -name "*.ko" -exec cp {} ../compiled-modules/ \;
 
       - name: Upload Compiled Modules
         uses: actions/upload-artifact@v4
