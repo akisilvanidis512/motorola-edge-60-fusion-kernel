@@ -19,7 +19,6 @@ jobs:
       with:
         msystem: MINGW64
         update: true
-        # Added make and diffutils to prevent missing command errors
         install: >-
           git
           make
@@ -37,7 +36,6 @@ jobs:
         
         export CFLAGS="-std=gnu99 -Wno-implicit-function-declaration -Wno-incompatible-pointer-types"
         
-        # Added --disable-dependency-tracking to fix the config.status crash
         ./configure --prefix=/mingw64 --host=x86_64-w64-mingw32 --disable-dependency-tracking
         make
         make install
@@ -51,16 +49,16 @@ jobs:
         mkdir build
         cd build
         
-        cmake -G "MinGW Makefiles" -DCMAKE_C_STANDARD=99 -DCMAKE_C_FLAGS="-std=gnu99 -Wno-incompatible-pointer-types" ..
+        # FIX: Added -DCMAKE_POLICY_VERSION_MINIMUM=3.5 to bypass the deprecation error
+        cmake -G "MinGW Makefiles" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_STANDARD=99 -DCMAKE_C_FLAGS="-std=gnu99 -Wno-incompatible-pointer-types" ..
         cmake --build .
 
     - name: Package Base Binaries and DLLs
       run: |
         mkdir release_package
-        # Copy the newly compiled streamer
+        
         cp rtl_fm_streamer/build/rtl_fm_streamer.exe release_package/ || true
         
-        # Copy necessary runtime DLLs
         cp /mingw64/bin/librtlsdr.dll release_package/ || true
         cp /mingw64/bin/libusb-1.0.dll release_package/ || true
         cp /mingw64/bin/libwinpthread-1.dll release_package/ || true
@@ -96,7 +94,7 @@ jobs:
                 Label l2 = new Label() { Text = "Mode:", Top = 60, Left = 20, Width = 100 };
                 modeSelect = new ComboBox() { Top = 60, Left = 120, Width = 140, DropDownStyle = ComboBoxStyle.DropDownList };
                 modeSelect.Items.AddRange(new string[] { "Mono (0)", "Stereo (1)" });
-                modeSelect.SelectedIndex = 1; // Default to Stereo
+                modeSelect.SelectedIndex = 1; 
 
                 startBtn = new Button() { Text = "Launch Streamer", Top = 110, Left = 20, Width = 240, Height = 40 };
                 startBtn.Click += Start_Click;
@@ -155,7 +153,7 @@ jobs:
         }
         "@
         Set-Content -Path GuiWrapper.cs -Value $guiCode
-        # Compile the C# GUI directly into the release folder
+        
         & "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /target:winexe /out:release_package\RTL_Network_Stream_GUI.exe GuiWrapper.cs
 
     - name: Upload Finished Artifact
